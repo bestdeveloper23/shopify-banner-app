@@ -1,4 +1,3 @@
-import { json } from "react-router";
 import { authenticate } from "../shopify.server";
 
 /** Square feet covered by one price increment (client: bill by 3.5 sq ft). */
@@ -22,12 +21,12 @@ function calculateBannerPrice(widthInches: number, heightInches: number): number
 export const action = async ({ request }) => {
   const url = new URL(request.url);
   if (request.method !== "POST" || !url.pathname.endsWith("create-draft")) {
-    return json({ error: "Method or path not allowed" }, { status: 400 });
+    return Response.json({ error: "Method or path not allowed" }, { status: 400 });
   }
 
   const { admin } = await authenticate.public.appProxy(request);
   if (!admin) {
-    return json(
+    return Response.json(
       { error: "Store session not available. Ensure the app is installed." },
       { status: 503 }
     );
@@ -43,7 +42,7 @@ export const action = async ({ request }) => {
   try {
     body = await request.json();
   } catch {
-    return json({ error: "Invalid JSON body" }, { status: 400 });
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const variantId = body.variantId;
@@ -51,7 +50,7 @@ export const action = async ({ request }) => {
   const widthInches = body.widthInches ?? 36;
   const heightInches = body.heightInches ?? 72;
   if (!variantId) {
-    return json({ error: "variantId is required" }, { status: 400 });
+    return Response.json({ error: "variantId is required" }, { status: 400 });
   }
 
   const price = calculateBannerPrice(widthInches, heightInches);
@@ -115,7 +114,7 @@ export const action = async ({ request }) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/scope|permission|access/i.test(msg)) {
-      return json(
+      return Response.json(
         {
           error:
             "This app needs permission to create draft orders. Uninstall the app and reinstall it from your Shopify admin, then try again.",
@@ -131,7 +130,7 @@ export const action = async ({ request }) => {
     /scope|permission|access/i.test(e?.message || "")
   );
   if (scopeError) {
-    return json(
+    return Response.json(
       {
         error:
           "This app needs permission to create draft orders. Uninstall the app and reinstall it from your Shopify admin, then try again.",
@@ -143,7 +142,7 @@ export const action = async ({ request }) => {
   const data = result?.data?.draftOrderCreate;
   const userErrors = data?.userErrors || [];
   if (userErrors.length > 0) {
-    return json(
+    return Response.json(
       { error: userErrors.map((e: { message: string }) => e.message).join(", ") },
       { status: 400 }
     );
@@ -151,13 +150,13 @@ export const action = async ({ request }) => {
 
   const invoiceUrl = data?.draftOrder?.invoiceUrl;
   if (!invoiceUrl) {
-    return json({ error: "Draft order created but no invoice URL" }, { status: 500 });
+    return Response.json({ error: "Draft order created but no invoice URL" }, { status: 500 });
   }
 
-  return json({ checkoutUrl: invoiceUrl });
+  return Response.json({ checkoutUrl: invoiceUrl });
 };
 
 export const loader = async ({ request }) => {
   await authenticate.public.appProxy(request);
-  return json({ ok: true, message: "Use POST to create-draft" });
+  return Response.json({ ok: true, message: "Use POST to create-draft" });
 };

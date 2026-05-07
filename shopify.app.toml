@@ -1,9 +1,9 @@
 # Create a separate app in Shopify Partners and run: shopify app config link
 # Update application_url and redirect_urls to your deployed host before production.
 
-client_id = "00000000000000000000000000000000"
+client_id = "676afce18622447d5cf9673cae5c4fa0"
 name = "Banner Design Preview"
-application_url = "https://example.com"
+application_url = "https://example.comhttps://shopify-banner-app-alpha.vercel.app"
 embedded = true
 
 [build]
@@ -34,4 +34,4 @@ prefix = "apps"
 subpath = "banner-preview"
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://shopify-banner-app-alpha.vercel.app/api/auth" ]
