@@ -13,12 +13,19 @@ const requiredScopes = (process.env.SCOPES || "write_products,write_app_proxy,re
   .map((s) => s.trim())
   .filter(Boolean);
 
+const appUrl = process.env.SHOPIFY_APP_URL || "";
+if (appUrl.includes("example.com")) {
+  console.warn(
+    "[shopify] SHOPIFY_APP_URL must not be https://example.com (IANA placeholder). Set it to your real app URL — same origin as shopify.app.toml application_url — then redeploy or restart dev."
+  );
+}
+
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
   scopes: requiredScopes,
-  appUrl: process.env.SHOPIFY_APP_URL || "",
+  appUrl,
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
