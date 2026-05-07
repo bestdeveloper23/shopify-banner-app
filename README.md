@@ -4,6 +4,8 @@ This directory is the Shopify side for the **Design-Preview-Tool** Replit app: t
 
 **Cart (like the sticker app):** In **Online Store → Themes → Customize**, open the **Cart** template (and the **cart drawer** section if your theme has one) and add the **Cart banner images** app block. It loads `/cart.js`, swaps the row image to the line item’s `Preview_Image` when present, and hides internal properties (design URLs, reference codes, etc.) while keeping **Banner_Width_In**, **Banner_Height_In**, and **Grommet_Summary** readable. Optional: in custom cart Liquid, replace the line image with `{% render 'banner-line-item-image', item: line_item, size: 120, class: '…' %}`.
 
+**Database / Vercel:** Migrations live under `prisma/migrations/` (Session table + drop legacy `ShopBilling`). SQLite is for local dev only; for Vercel use Postgres and `DATABASE_URL`, then add `prisma migrate deploy` to the build — see [docs/VERCEL_DATABASE.md](docs/VERCEL_DATABASE.md).
+
 ---
 
 # Shopify App Template - React Router
