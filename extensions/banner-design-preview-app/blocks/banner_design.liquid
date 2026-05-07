@@ -1,0 +1,636 @@
+{%- assign banner_tag = block.settings.product_tag | strip -%}
+{%- if banner_tag == blank -%}
+  {%- assign banner_tag = "Banner Designer" -%}
+{%- endif -%}
+{%- assign show_banner_designer = false -%}
+{%- if product and product.tags contains banner_tag -%}
+  {%- assign show_banner_designer = true -%}
+{%- endif -%}
+{%- if show_banner_designer -%}
+{%- assign hide_variant_label = block.settings.hide_variant_label | strip -%}
+{%- if hide_variant_label == blank -%}
+  {%- assign hide_variant_label = "Custom Size" -%}
+{%- endif -%}
+<div id="banner-designer-block" {{ block.shopify_attributes }} data-hide-variant-label="{{ hide_variant_label | escape }}">
+  <button
+    id="banner-design-now-btn"
+    type="button"
+    style="padding:12px 24px;font-size:16px;"
+  >
+    Design Banner
+  </button>
+  <div
+    id="banner-designer-modal"
+    style="display:none;position:fixed;inset:0;z-index:99999;"
+    aria-hidden="true"
+  >
+    <div
+      id="banner-designer-backdrop"
+      style="position:absolute;inset:0;background:rgba(0,0,0,0.5);cursor:pointer;"
+      aria-label="Close designer"
+    ></div>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Banner designer"
+      id="banner-designer-dialog"
+      style="position:absolute;top:0;left:0;width:100vw;height:100vh;background:#fff;overflow:hidden;pointer-events:auto;"
+    >
+      <iframe
+        id="banner-designer-frame"
+        title="Banner designer"
+        style="width:100%;height:100%;border:0;display:block;"
+        loading="lazy"
+        referrerpolicy="origin"
+      ></iframe>
+    </div>
+  </div>
+  <div
+    id="banner-designer-status"
+    style="margin-top:8px;font-size:14px;"
+    aria-live="polite"
+  ></div>
+
+  <div id="banner-designer-preview" style="margin-top:12px;display:none;">
+    <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Your banner proof</div>
+    <img
+      id="banner-designer-preview-image"
+      alt="Banner preview"
+      width="320"
+      height="200"
+      style="max-width:100%;height:auto;border:1px solid #e1e3e5;border-radius:10px;background:#fafafa;"
+      loading="lazy"
+    />
+  </div>
+</div>
+
+<script type="application/json" id="banner-designer-variant-map">
+[
+{%- assign __bd_first = true -%}
+{%- for v in product.variants -%}
+  {%- assign wopt = v.option1 | strip -%}
+  {%- assign hopt = v.option2 | strip -%}
+  {%- unless wopt == hide_variant_label or hopt == hide_variant_label -%}
+    {%- unless __bd_first -%},{%- endunless -%}
+    {%- assign __bd_first = false -%}
+    {"id":{{ v.id }},"w":{{ wopt | json }},"h":{{ hopt | json }}}
+  {%- endunless -%}
+{%- endfor -%}
+]
+</script>
+{%- assign custom_variant_id = "" -%}
+{%- for v in product.variants -%}
+  {%- assign vopt1 = v.option1 | strip -%}
+  {%- assign vopt2 = v.option2 | strip -%}
+  {%- if vopt1 == hide_variant_label or vopt2 == hide_variant_label -%}
+    {%- assign custom_variant_id = v.id -%}
+    {%- break -%}
+  {%- endif -%}
+{%- endfor -%}
+<script type="application/json" id="banner-designer-custom-variant-id">{% if custom_variant_id != "" %}{{ custom_variant_id }}{% else %}null{% endif %}</script>
+
+<script>
+  (function () {
+    {%- assign designer_origin = block.settings.designer_url | strip -%}
+    {%- if designer_origin == blank -%}
+      {%- assign designer_origin = "https://design-preview-tool.replit.app" -%}
+    {%- endif -%}
+    var DESIGN_ORIGIN = {{ designer_origin | json }};
+    try {
+      if (DESIGN_ORIGIN) DESIGN_ORIGIN = new URL(DESIGN_ORIGIN).origin;
+    } catch (e) {}
+    const DESIGN_PATH = "/";
+    {%- assign draft_path = block.settings.draft_order_path | strip -%}
+    {%- if draft_path == blank -%}
+      {%- assign draft_path = "/apps/banner-preview/create-draft" -%}
+    {%- endif -%}
+    const DRAFT_ORDER_PATH = {{ draft_path | json }};
+    const productHandle = "{{ product.handle }}";
+    const variantId = "{{ product.selected_or_first_available_variant.id }}";
+    const customerId = "{{ customer.id }}";
+    const customerEmail = "{{ customer.email }}";
+
+    const customVariantIdEl = document.getElementById("banner-designer-custom-variant-id");
+    const customVariantId = (function () {
+      if (!customVariantIdEl || !customVariantIdEl.textContent) return null;
+      try {
+        const v = JSON.parse(customVariantIdEl.textContent.trim());
+        return (v != null && v !== "") ? String(v) : null;
+      } catch (e) {
+        return null;
+      }
+    })();
+
+    const variantMapEl = document.getElementById("banner-designer-variant-map");
+    const variantMap = (function () {
+      if (!variantMapEl || !variantMapEl.textContent) return {};
+      try {
+        const arr = JSON.parse(variantMapEl.textContent);
+        const out = {};
+        (arr || []).forEach(function (v) {
+          var key = variantKeyFromOpts(v.w, v.h);
+          if (key) out[key] = v.id;
+        });
+        return out;
+      } catch (e) {
+        return {};
+      }
+    })();
+
+    function fmtDim(n) {
+      var x = Math.round(Number(n) * 100) / 100;
+      if (Number.isNaN(x)) return null;
+      return (Math.abs(x - Math.round(x)) < 1e-6) ? String(Math.round(x)) : String(x);
+    }
+
+    function variantKeyFromOpts(w, h) {
+      var ws = fmtDim(w);
+      var hs = fmtDim(h);
+      if (!ws || !hs) return null;
+      return ws + " x " + hs;
+    }
+
+    function parseKeyDims(key) {
+      var parts = String(key).split(/\s*[x×]\s*/i);
+      if (parts.length < 2) return null;
+      var a = Number(parts[0].trim());
+      var b = Number(parts[1].trim());
+      if (Number.isNaN(a) || Number.isNaN(b)) return null;
+      return { a: a, b: b };
+    }
+
+    function findVariantId(widthInches, heightInches) {
+      if (Object.keys(variantMap).length === 0) return null;
+      var w = Number(widthInches);
+      var h = Number(heightInches);
+      if (Number.isNaN(w) || Number.isNaN(h)) return null;
+      var key = variantKeyFromOpts(w, h);
+      if (key && variantMap[key] != null) return variantMap[key];
+      var swapKey = variantKeyFromOpts(h, w);
+      if (swapKey && variantMap[swapKey] != null) return variantMap[swapKey];
+      var eps = 0.06;
+      for (var k in variantMap) {
+        if (!Object.prototype.hasOwnProperty.call(variantMap, k)) continue;
+        var d = parseKeyDims(k);
+        if (!d) continue;
+        if (
+          (Math.abs(d.a - w) < eps && Math.abs(d.b - h) < eps) ||
+          (Math.abs(d.a - h) < eps && Math.abs(d.b - w) < eps)
+        ) {
+          return variantMap[k];
+        }
+      }
+      return null;
+    }
+
+    function addToCartWithVariantId(matchedId, payload, onFailMessage) {
+      var referenceCode = payload.referenceCode;
+      var designUrl = payload.designUrl;
+      var rawImageUrl = payload.rawImageUrl;
+      var widthInches = payload.widthInches;
+      var heightInches = payload.heightInches;
+      var grommetSummary = payload.grommetSummary;
+      var imageName = payload.imageName;
+      var properties = {};
+      if (referenceCode) properties.Reference_Code = String(referenceCode);
+      if (!Number.isNaN(Number(widthInches))) properties.Banner_Width_In = String(widthInches);
+      if (!Number.isNaN(Number(heightInches))) properties.Banner_Height_In = String(heightInches);
+      if (grommetSummary) properties.Grommet_Summary = String(grommetSummary);
+      if (imageName) properties.Image_Name = String(imageName);
+      if (designUrl) properties._Design_URL = String(designUrl);
+      if (rawImageUrl) properties._Original_Image_URL = String(rawImageUrl);
+      var prevImg = pickPreviewImageUrl(payload);
+      if (prevImg) properties.Preview_Image = String(prevImg);
+
+      statusEl.textContent = "Adding to cart…";
+
+      fetch("/cart/add.js", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          items: [{
+            id: matchedId,
+            quantity: 1,
+            properties: properties
+          }]
+        })
+      })
+        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+        .then(({ ok, data }) => {
+          if (!ok && data && data.description) {
+            statusEl.textContent = data.description || "Could not add to cart.";
+            closeModal();
+            return;
+          }
+          if (data && data.message && data.status !== 200) {
+            statusEl.textContent = data.message;
+            closeModal();
+            return;
+          }
+          closeModal();
+          window.location.href = "/cart";
+        })
+        .catch(function () {
+          statusEl.textContent = onFailMessage || "Could not add to cart. Please try again.";
+          closeModal();
+        });
+    }
+
+    const statusEl = document.getElementById("banner-designer-status");
+    const buttonEl = document.getElementById("banner-design-now-btn");
+    const modalEl = document.getElementById("banner-designer-modal");
+    if (modalEl && modalEl.parentNode !== document.body) {
+      document.body.appendChild(modalEl);
+    }
+    const backdropEl = document.getElementById("banner-designer-backdrop");
+    const frameEl = document.getElementById("banner-designer-frame");
+    const previewEl = document.getElementById("banner-designer-preview");
+    const previewImgEl = document.getElementById("banner-designer-preview-image");
+
+    function isSafeDownloadUrl(url) {
+      if (!url || typeof url !== "string") return false;
+      try {
+        var u = new URL(url.trim());
+        return u.protocol === "https:";
+      } catch (e) {
+        return false;
+      }
+    }
+
+    /** HTTPS image URL for cart / line-item thumbnail (signed proof or original art). */
+    function pickPreviewImageUrl(payload) {
+      if (!payload) return null;
+      var u =
+        payload.previewImage ||
+        payload.preview_image ||
+        payload.rawImageUrl ||
+        payload.raw_image_url ||
+        payload.designUrl ||
+        payload.design_url;
+      if (!u || typeof u !== "string") return null;
+      return isSafeDownloadUrl(u) ? u.trim() : null;
+    }
+
+    const getProductForm = () =>
+      document.querySelector('form[action^="/cart/add"]');
+
+    const ensurePropertyInput = (form, name) => {
+      let input = form.querySelector(`input[name="properties[${name}]"]`);
+      if (!input) {
+        input = document.createElement("input");
+        input.type = "hidden";
+        input.name = `properties[${name}]`;
+        form.appendChild(input);
+      }
+      return input;
+    };
+
+    const setDesignProperties = (payload) => {
+      const {
+        referenceCode,
+        designUrl,
+        rawImageUrl,
+        widthInches,
+        heightInches,
+        grommetSummary,
+        imageName
+      } = payload || {};
+      var previewImg = pickPreviewImageUrl(payload);
+
+      const form = getProductForm();
+      if (!form) {
+        statusEl.textContent =
+          "Design saved. Use the product form to add this banner to the cart.";
+        return;
+      }
+
+      if (referenceCode) {
+        ensurePropertyInput(form, "Reference_Code").value = referenceCode;
+      }
+      if (designUrl) {
+        ensurePropertyInput(form, "_Design_URL").value = designUrl;
+      }
+      if (widthInches != null && widthInches !== "") {
+        ensurePropertyInput(form, "Banner_Width_In").value = String(widthInches);
+      }
+      if (heightInches != null && heightInches !== "") {
+        ensurePropertyInput(form, "Banner_Height_In").value = String(heightInches);
+      }
+      if (grommetSummary) {
+        ensurePropertyInput(form, "Grommet_Summary").value = grommetSummary;
+      }
+      if (imageName) {
+        ensurePropertyInput(form, "Image_Name").value = imageName;
+      }
+      if (rawImageUrl) {
+        ensurePropertyInput(form, "_Original_Image_URL").value = rawImageUrl;
+      }
+      if (previewImg) {
+        ensurePropertyInput(form, "Preview_Image").value = previewImg;
+      }
+
+      var matchedVariantId = findVariantId(widthInches, heightInches);
+      if (matchedVariantId != null) {
+        var idInput = form.querySelector('input[name="id"]');
+        if (idInput) {
+          idInput.value = String(matchedVariantId);
+          idInput.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+
+      var previewSrc = previewImg || rawImageUrl || designUrl;
+      if (previewSrc && previewEl && previewImgEl && isSafeDownloadUrl(previewSrc)) {
+        previewImgEl.src = previewSrc;
+        previewImgEl.onerror = function () { previewEl.style.display = "none"; };
+        previewEl.style.display = "block";
+      }
+
+      const details = [];
+      if (referenceCode) details.push("Ref: " + referenceCode);
+      if (widthInches != null && heightInches != null) details.push(String(widthInches) + "\" × " + String(heightInches) + "\"");
+      statusEl.textContent = details.length
+        ? "Design selected. " + details.join(" · ")
+        : "Design selected.";
+      buttonEl.textContent = "Design selected";
+    };
+
+    const createDraftOrder = (payload) => {
+      const {
+        referenceCode,
+        designUrl,
+        rawImageUrl,
+        widthInches,
+        heightInches,
+        grommetSummary,
+        imageName
+      } = payload || {};
+
+      const wNum = widthInches != null ? Number(widthInches) : NaN;
+      const hNum = heightInches != null ? Number(heightInches) : NaN;
+      const properties = {};
+      if (referenceCode) properties.Reference_Code = String(referenceCode);
+      if (designUrl) properties.Design_URL = String(designUrl);
+      if (!Number.isNaN(wNum)) properties.Banner_Width_In = String(wNum);
+      if (!Number.isNaN(hNum)) properties.Banner_Height_In = String(hNum);
+      if (grommetSummary) properties.Grommet_Summary = String(grommetSummary);
+      if (imageName) properties.Image_Name = String(imageName);
+      if (rawImageUrl) properties.Original_Image_URL = String(rawImageUrl);
+      var prevImg = pickPreviewImageUrl(payload);
+      if (prevImg) properties.Preview_Image = String(prevImg);
+
+      const url = (function () {
+        var path = DRAFT_ORDER_PATH;
+        if (path.indexOf("/") === 0) return window.location.origin + path;
+        return path;
+      })();
+
+      return fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          variantId: String(customVariantId),
+          quantity: 1,
+          widthInches: Number.isNaN(wNum) ? 36 : wNum,
+          heightInches: Number.isNaN(hNum) ? 72 : hNum,
+          properties: properties
+        })
+      })
+        .then((res) => res.json().then((data) => ({ ok: res.ok, data })))
+        .then(({ ok, data }) => {
+          if (!ok && data && data.error) {
+            throw new Error(data.error);
+          }
+          if (data && data.checkoutUrl) {
+            return { checkoutUrl: data.checkoutUrl };
+          }
+          throw new Error(data && data.error ? data.error : "Could not create order.");
+        });
+    };
+
+    const addToCartAndRedirect = (payload) => {
+      const {
+        referenceCode,
+        designUrl,
+        rawImageUrl,
+        widthInches,
+        heightInches,
+        grommetSummary,
+        imageName
+      } = payload || {};
+
+      const matchedVariantId = findVariantId(widthInches, heightInches);
+
+      if (matchedVariantId != null) {
+        addToCartWithVariantId(String(matchedVariantId), payload, "Could not add to cart. Please try again.");
+        return;
+      }
+
+      if (customVariantId != null) {
+        statusEl.textContent = "Creating draft order…";
+        setDesignProperties(payload);
+        createDraftOrder(payload)
+          .then(function (res) {
+            statusEl.textContent = "Redirecting to checkout…";
+            closeModal();
+            window.location.href = res.checkoutUrl;
+          })
+          .catch(function (err) {
+            statusEl.textContent = err.message || "Could not create order. Please try again.";
+            closeModal();
+          });
+        return;
+      }
+
+      // No dimension match and no $0 "Custom" variant: still add line-item properties to the variant
+      // currently selected on this product page (works for single-SKU custom banner products).
+      if (variantId) {
+        addToCartWithVariantId(String(variantId), payload, "Could not add to cart. Please try again.");
+        return;
+      }
+
+      closeModal();
+      statusEl.textContent =
+        "Could not add to cart automatically. Add a $0 variant whose Option1 or Option2 is \"" +
+        (document.getElementById("banner-designer-block")?.getAttribute("data-hide-variant-label") || "Custom Size") +
+        "\" for draft checkout, or add preset width×height variants that match your designer dimensions.";
+    };
+
+    const handleMessage = (event) => {
+      if (event.origin !== DESIGN_ORIGIN) return;
+      var data = event.data || {};
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data);
+        } catch (error) {
+          return;
+        }
+      }
+      if (data && data.type === "bannerDesignReady") {
+        const payload = {
+          referenceCode: data.referenceCode || data.reference || data.ref,
+          designUrl:
+            data.Design_URL ||
+            data.designUrl ||
+            data.url ||
+            data.design_url,
+          rawImageUrl: data.rawImageUrl || data.raw_image_url || null,
+          previewImage: data.previewImage || data.preview_image || null,
+          widthInches: data.widthInches ?? data.width_inches,
+          heightInches: data.heightInches ?? data.height_inches,
+          grommetSummary: data.grommetSummary || data.grommet_summary || "",
+          imageName: data.imageName || data.image_name || null
+        };
+        var wn = Number(payload.widthInches);
+        var hn = Number(payload.heightInches);
+        if (Number.isFinite(wn)) payload.widthInches = wn;
+        if (Number.isFinite(hn)) payload.heightInches = hn;
+        setDesignProperties(payload);
+        addToCartAndRedirect(payload);
+      }
+    };
+
+    const openModal = (url) => {
+      if (!modalEl || !frameEl) return;
+      frameEl.src = url;
+      modalEl.style.display = "block";
+      modalEl.setAttribute("aria-hidden", "false");
+      document.documentElement.style.overflow = "hidden";
+    };
+
+    const closeModal = () => {
+      if (!modalEl) return;
+      modalEl.style.display = "none";
+      modalEl.setAttribute("aria-hidden", "true");
+      document.documentElement.style.overflow = "";
+      if (frameEl) {
+        try {
+          frameEl.src = "about:blank";
+        } catch (e) {}
+      }
+    };
+
+    const buildDesignerUrl = (params) => {
+      const url = new URL(DESIGN_PATH, DESIGN_ORIGIN);
+      url.searchParams.set("embed", "1");
+      url.searchParams.set("parentOrigin", window.location.origin);
+      url.searchParams.set("returnUrl", window.location.href);
+      url.searchParams.set("variantId", variantId);
+      url.searchParams.set("productHandle", productHandle);
+      if (customerId) url.searchParams.set("customerId", customerId);
+      if (customerEmail) url.searchParams.set("customerEmail", customerEmail);
+
+      if (params) {
+        Object.keys(params).forEach((key) => {
+          if (params[key] !== undefined && params[key] !== null) {
+            url.searchParams.set(key, params[key]);
+          }
+        });
+      }
+
+      return url.toString();
+    };
+
+    if (buttonEl) {
+      buttonEl.addEventListener("click", function () {
+        if (!DESIGN_ORIGIN) {
+          statusEl.textContent = "Set the Designer URL in this block's theme settings (your Replit Design Preview Tool HTTPS URL).";
+          return;
+        }
+        const url = buildDesignerUrl();
+        openModal(url);
+        statusEl.textContent = "Designer opened. Add to cart when your proof is ready.";
+      });
+    }
+
+    if (backdropEl) {
+      backdropEl.addEventListener("click", closeModal);
+    }
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") closeModal();
+    });
+
+    window.addEventListener("message", handleMessage, false);
+
+    function hideCustomVariantFromSelector() {
+      var blockEl = document.getElementById("banner-designer-block");
+      var label = blockEl && blockEl.getAttribute("data-hide-variant-label");
+      if (!label || !label.trim()) return;
+
+      var form = getProductForm();
+      var root = form ? form.closest(".product") || form.closest("[data-product]") || document.body : document.body;
+
+      root.querySelectorAll('select[name*="option"], select[id*="variant"], select[data-option-index]').forEach(function (sel) {
+        var opt = Array.prototype.find.call(sel.options, function (o) { return (o.value || o.textContent || "").trim() === label; });
+        if (opt) {
+          opt.style.display = "none";
+          opt.disabled = true;
+          opt.setAttribute("aria-hidden", "true");
+          if (sel.value === opt.value) {
+            var firstVisible = Array.prototype.find.call(sel.options, function (o) { return o !== opt && !o.disabled && o.value !== ""; });
+            if (firstVisible) { sel.value = firstVisible.value; sel.dispatchEvent(new Event("change", { bubbles: true })); }
+          }
+        }
+      });
+
+      root.querySelectorAll('input[type="radio"][name*="option"], input[type="radio"][data-option-index]').forEach(function (input) {
+        if ((input.value || "").trim() !== label) return;
+        var wrap = input.closest("label") || input.closest("fieldset") || input.closest(".variant-option") || input.parentElement;
+        if (wrap) {
+          wrap.style.display = "none";
+          wrap.setAttribute("aria-hidden", "true");
+        }
+        input.disabled = true;
+        if (input.checked) {
+          var firstOther = root.querySelector('input[type="radio"][name="' + input.name + '"]:not([disabled])');
+          if (firstOther) { firstOther.checked = true; firstOther.dispatchEvent(new Event("change", { bubbles: true })); }
+        }
+      });
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", hideCustomVariantFromSelector);
+    } else {
+      hideCustomVariantFromSelector();
+    }
+    setTimeout(hideCustomVariantFromSelector, 500);
+  })();
+</script>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Banner designer",
+  "target": "section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "product_tag",
+      "label": "Show only for products with tag",
+      "default": "Banner Designer",
+      "info": "The block appears only on products that include this tag."
+    },
+    {
+      "type": "text",
+      "id": "designer_url",
+      "label": "Designer URL",
+      "default": "https://design-preview-tool.replit.app",
+      "placeholder": "https://design-preview-tool.replit.app",
+      "info": "HTTPS origin of your Design Preview Tool (Replit). Leave default for production Replit app."
+    },
+    {
+      "type": "text",
+      "id": "hide_variant_label",
+      "label": "Custom variant option label",
+      "default": "Custom Size",
+      "info": "Option1 or Option2 value on the $0 variant used for draft checkout when no preset size matches. Must match exactly (including spaces)."
+    },
+    {
+      "type": "text",
+      "id": "draft_order_path",
+      "label": "Draft order path",
+      "default": "/apps/banner-preview/create-draft",
+      "info": "App proxy path on your storefront (must match Shopify app proxy subpath)."
+    }
+  ]
+}
+{% endschema %}
