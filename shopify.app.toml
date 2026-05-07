@@ -3,7 +3,7 @@
 
 client_id = "676afce18622447d5cf9673cae5c4fa0"
 name = "Banner Design Preview"
-application_url = "https://example.comhttps://shopify-banner-app-alpha.vercel.app"
+application_url = "https://shopify-banner-app-alpha.vercel.app"
 embedded = true
 
 [build]
