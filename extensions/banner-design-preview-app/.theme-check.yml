@@ -1,5 +1,8 @@
-# Theme Check config for Custom Sticker Designer extension
+# Theme Check config for Banner Design Preview theme app extension
 extends: theme-check:theme-app-extension
 # RemoteAsset: disabled — snippet uses dynamic line-item image URL (design preview), not a theme asset
 RemoteAsset:
+  enabled: false
+# Optional snippet for merchants copying cart markup; not rendered by the app block itself
+OrphanedSnippet:
   enabled: false

@@ -66,13 +66,13 @@
 
 <script type="application/json" id="banner-designer-variant-map">
 [
-{%- assign __bd_first = true -%}
+{%- assign banner_variant_map_first = true -%}
 {%- for v in product.variants -%}
   {%- assign wopt = v.option1 | strip -%}
   {%- assign hopt = v.option2 | strip -%}
   {%- unless wopt == hide_variant_label or hopt == hide_variant_label -%}
-    {%- unless __bd_first -%},{%- endunless -%}
-    {%- assign __bd_first = false -%}
+    {%- unless banner_variant_map_first -%},{%- endunless -%}
+    {%- assign banner_variant_map_first = false -%}
     {"id":{{ v.id }},"w":{{ wopt | json }},"h":{{ hopt | json }}}
   {%- endunless -%}
 {%- endfor -%}

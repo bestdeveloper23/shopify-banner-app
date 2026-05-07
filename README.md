@@ -4,7 +4,7 @@ This directory is the Shopify side for the **Design-Preview-Tool** Replit app: t
 
 **Cart (like the sticker app):** In **Online Store → Themes → Customize**, open the **Cart** template (and the **cart drawer** section if your theme has one) and add the **Cart banner images** app block. It loads `/cart.js`, swaps the row image to the line item’s `Preview_Image` when present, and hides internal properties (design URLs, reference codes, etc.) while keeping **Banner_Width_In**, **Banner_Height_In**, and **Grommet_Summary** readable. Optional: in custom cart Liquid, replace the line image with `{% render 'banner-line-item-image', item: line_item, size: 120, class: '…' %}`.
 
-**Database / Vercel:** Migrations live under `prisma/migrations/` (Session table + drop legacy `ShopBilling`). SQLite is for local dev only; for Vercel use Postgres and `DATABASE_URL`, then add `prisma migrate deploy` to the build — see [docs/VERCEL_DATABASE.md](docs/VERCEL_DATABASE.md).
+**Database / Vercel:** Prisma targets **PostgreSQL** (`DATABASE_URL` + `DIRECT_URL` in `.env`). `vercel.json` runs **`prisma migrate deploy`** on each deploy so the **`Session`** table exists on Vercel Postgres. The Vercel dashboard does not list tables like a SQL client — use Neon’s SQL editor, Prisma Studio, or `information_schema` — see [docs/VERCEL_DATABASE.md](docs/VERCEL_DATABASE.md).
 
 ---
 
@@ -88,10 +88,9 @@ For more information on the Shopify Dev MCP please read [the documentation](http
 
 ### Application Storage
 
-This template uses [Prisma](https://www.prisma.io/) to store session data, by default using an [SQLite](https://www.sqlite.org/index.html) database.
-The database is defined as a Prisma schema in `prisma/schema.prisma`.
+This app uses [Prisma](https://www.prisma.io/) with **PostgreSQL** for session storage (`prisma/schema.prisma`).
 
-This use of SQLite works in production if your app runs as a single instance.
+The upstream template used SQLite for quick local runs; this fork expects **Postgres locally and in production** (Neon, Vercel Postgres, Docker, etc.).
 The database that works best for you depends on the data your app needs and how it is queried.
 Here’s a short list of databases providers that provide a free tier to get started:
 
