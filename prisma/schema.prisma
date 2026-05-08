@@ -1,5 +1,8 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
+//
+// Use PostgreSQL for production (Vercel). For local dev, set DATABASE_URL in .env
+// (e.g. Neon free tier or local Postgres). Same pattern as custom-sticker-app(lastupdated).
 
 generator client {
   provider = "prisma-client-js"

@@ -1,22 +1,5 @@
 import { authenticate } from "../shopify.server";
-
-/** Square feet covered by one price increment (client: bill by 3.5 sq ft). */
-const SQFT_PER_PRICE_UNIT = 3.5;
-
-/**
- * Draft-order line price: ceil(area_sqft / 3.5) × rate.
- * Set `BANNER_PRICE_PER_3_5_SQFT` (USD) on the app host to match the merchant’s catalog.
- */
-function calculateBannerPrice(widthInches: number, heightInches: number): number {
-  const w = Math.max(0.5, Number(widthInches) || 36);
-  const h = Math.max(0.5, Number(heightInches) || 72);
-  const areaSqFt = (w * h) / 144;
-  const increments = Math.max(1, Math.ceil(areaSqFt / SQFT_PER_PRICE_UNIT));
-  const usdPerIncrement = Number(process.env.BANNER_PRICE_PER_3_5_SQFT);
-  const rate =
-    Number.isFinite(usdPerIncrement) && usdPerIncrement > 0 ? usdPerIncrement : 28;
-  return Math.round(increments * rate * 100) / 100;
-}
+import { calculateBannerDraftPrice } from "../pricing.server";
 
 export const action = async ({ request }) => {
   const url = new URL(request.url);
@@ -24,8 +7,23 @@ export const action = async ({ request }) => {
     return Response.json({ error: "Method or path not allowed" }, { status: 400 });
   }
 
-  const { admin } = await authenticate.public.appProxy(request);
+  let admin;
+  try {
+    const proxyAuth = await authenticate.public.appProxy(request);
+    admin = proxyAuth.admin;
+  } catch (err) {
+    console.error("[apps.proxy] App proxy auth failed:", err);
+    return Response.json(
+      {
+        error:
+          "App proxy authentication failed. Check app installation and API credentials.",
+      },
+      { status: 401 }
+    );
+  }
+
   if (!admin) {
+    console.error("[apps.proxy] No admin client — shop may not have an offline session");
     return Response.json(
       { error: "Store session not available. Ensure the app is installed." },
       { status: 503 }
@@ -53,7 +51,7 @@ export const action = async ({ request }) => {
     return Response.json({ error: "variantId is required" }, { status: 400 });
   }
 
-  const price = calculateBannerPrice(widthInches, heightInches);
+  const price = calculateBannerDraftPrice(widthInches, heightInches);
   const variantGid =
     variantId.startsWith("gid://") ? variantId : `gid://shopify/ProductVariant/${variantId}`;
 
@@ -113,6 +111,17 @@ export const action = async ({ request }) => {
     result = await response.json();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.error("[apps.proxy] GraphQL draftOrderCreate failed:", msg);
+    if (/protected.customer.data|not approved to access the DraftOrder/i.test(msg)) {
+      return Response.json(
+        {
+          error:
+            "Draft orders are blocked until this app is approved for protected customer data in the Shopify Partner Dashboard. See https://shopify.dev/docs/apps/launch/protected-customer-data",
+          code: "PROTECTED_CUSTOMER_DATA",
+        },
+        { status: 403 }
+      );
+    }
     if (/scope|permission|access/i.test(msg)) {
       return Response.json(
         {
@@ -122,10 +131,23 @@ export const action = async ({ request }) => {
         { status: 403 }
       );
     }
-    throw err;
+    return Response.json({ error: "Failed to create draft order." }, { status: 500 });
   }
 
   const graphqlErrors = result?.errors || [];
+  const pcdError = graphqlErrors.find((e: { message: string }) =>
+    /protected.customer.data|DraftOrder/i.test(e?.message || "")
+  );
+  if (pcdError) {
+    return Response.json(
+      {
+        error:
+          "Draft orders are blocked until this app is approved for protected customer data. See https://shopify.dev/docs/apps/launch/protected-customer-data",
+        code: "PROTECTED_CUSTOMER_DATA",
+      },
+      { status: 403 }
+    );
+  }
   const scopeError = graphqlErrors.find((e: { message: string }) =>
     /scope|permission|access/i.test(e?.message || "")
   );
@@ -156,7 +178,74 @@ export const action = async ({ request }) => {
   return Response.json({ checkoutUrl: invoiceUrl });
 };
 
+const DEFAULT_DESIGNER_ORIGIN =
+  process.env.DESIGNER_ORIGIN || "https://design-preview-tool.replit.app";
+
+function getAllowedDesignerOrigins(): string[] {
+  const list = [
+    DEFAULT_DESIGNER_ORIGIN,
+    ...(process.env.ALLOWED_DESIGNER_ORIGINS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  ];
+  return [...new Set(list)];
+}
+
+function isAllowedDesignerOrigin(origin: string | null): boolean {
+  if (!origin || typeof origin !== "string") return false;
+  try {
+    const u = new URL(origin);
+    if (u.protocol !== "https:") return false;
+    const allowed = getAllowedDesignerOrigins();
+    const normalized = u.origin;
+    return allowed.some((a) => new URL(a).origin === normalized);
+  } catch {
+    return false;
+  }
+}
+
 export const loader = async ({ request }) => {
-  await authenticate.public.appProxy(request);
+  try {
+    await authenticate.public.appProxy(request);
+  } catch (err) {
+    console.error("[apps.proxy] App proxy auth failed (loader):", err);
+    return Response.json(
+      { error: "App proxy authentication failed.", designs: [] },
+      { status: 401 }
+    );
+  }
+
+  const url = new URL(request.url);
+  const pathname = url.pathname || "";
+
+  if (request.method === "GET" && pathname.endsWith("/designs")) {
+    const customerId = url.searchParams.get("customerId") ?? "";
+    const designerOriginParam = url.searchParams.get("designerOrigin");
+    const designerOrigin = isAllowedDesignerOrigin(designerOriginParam)
+      ? new URL(designerOriginParam!).origin
+      : new URL(DEFAULT_DESIGNER_ORIGIN).origin;
+
+    const designsUrl = `${designerOrigin}/api/designs?customerId=${encodeURIComponent(customerId)}`;
+    try {
+      const res = await fetch(designsUrl, {
+        method: "GET",
+        headers: { Accept: "application/json" },
+      });
+      const data = await res.json().catch(() => ({}));
+      return Response.json(data, {
+        status: res.status,
+        headers: {
+          "Cache-Control": "private, max-age=60",
+        },
+      });
+    } catch {
+      return Response.json(
+        { error: "Could not load designs", designs: [] },
+        { status: 502 }
+      );
+    }
+  }
+
   return Response.json({ ok: true, message: "Use POST to create-draft" });
 };

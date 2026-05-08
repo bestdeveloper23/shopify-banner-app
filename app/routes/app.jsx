@@ -1,4 +1,4 @@
-import { Outlet, useLoaderData, useRouteError } from "react-router";
+import { Outlet, useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { authenticate } from "../shopify.server";
@@ -17,18 +17,20 @@ export default function App() {
     <AppProvider embedded apiKey={apiKey}>
       <s-app-nav>
         <s-link href="/app">Home</s-link>
-        <s-link href="/app/additional">Additional page</s-link>
+        <s-link href="/app/additional">Resources</s-link>
+        <s-link href="/app/privacy">Privacy Policy</s-link>
       </s-app-nav>
       <Outlet />
     </AppProvider>
   );
 }
 
-// Shopify needs React Router to catch some thrown responses, so that their headers are included in the response.
-export function ErrorBoundary() {
-  return boundary.error(useRouteError());
-}
-
+// Do not export a route ErrorBoundary here. React Router wraps it with
+// WithErrorBoundaryProps (useParams/useLoaderData inside the wrapper). When a
+// loader error occurs before route context is stable—often in Vite dev with
+// tunneling—that wrapper can run with a null context and crash with
+// "Cannot read properties of null (reading 'useContext')". Errors bubble to
+// root.jsx instead. boundary.headers below still applies Shopify document headers.
 export const headers = (headersArgs) => {
   return boundary.headers(headersArgs);
 };

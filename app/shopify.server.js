@@ -7,13 +7,20 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
-// Must match shopify.app.toml [access_scopes]. Add write_draft_orders here or via SCOPES env after merchant grants it.
-const requiredScopes = (process.env.SCOPES || "write_products,write_app_proxy,read_orders")
+// Must match shopify.app.toml [access_scopes]. read_orders required for orders/paid webhook.
+const requiredScopes = (
+  process.env.SCOPES || "write_products,write_app_proxy,read_orders,write_draft_orders"
+)
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
-const appUrl = process.env.SHOPIFY_APP_URL || "";
+// Set SHOPIFY_APP_URL in production. On Vercel, fallback to https://VERCEL_URL when unset (same pattern as custom-sticker-app(lastupdated)).
+const appUrl =
+  process.env.SHOPIFY_APP_URL ||
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+  "";
+
 if (appUrl.includes("example.com")) {
   console.warn(
     "[shopify] SHOPIFY_APP_URL must not be https://example.com (IANA placeholder). Set it to your real app URL — same origin as shopify.app.toml application_url — then redeploy or restart dev."
@@ -27,7 +34,10 @@ const shopify = shopifyApp({
   scopes: requiredScopes,
   appUrl,
   authPathPrefix: "/auth",
-  sessionStorage: new PrismaSessionStorage(prisma),
+  sessionStorage: new PrismaSessionStorage(prisma, {
+    connectionRetries: 6,
+    connectionRetryIntervalMs: 3000,
+  }),
   distribution: AppDistribution.AppStore,
   future: {
     expiringOfflineAccessTokens: true,

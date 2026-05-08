@@ -17,9 +17,20 @@ Common reasons:
 2. **Migrations never ran on that database.** If `schema.prisma` was still **SQLite** or the Vercel **build command** did not run `prisma migrate deploy`, nothing creates `Session` (or `_prisma_migrations`) on Postgres.
 3. **Wrong project or env.** The database you opened in the dashboard must be the one linked to this Vercel project, and **Production** vs **Preview** env vars can point at different URLs.
 
-This repo is configured for **PostgreSQL**: `schema.prisma` uses `DATABASE_URL` and `DIRECT_URL`, and **`vercel.json`** runs **`npx prisma generate && npx prisma migrate deploy && npm run build`** so each deploy applies migrations before the app build.
+This repo is configured for **PostgreSQL**: `schema.prisma` uses **`DATABASE_URL`** only, and **`npm run build`** runs **`prisma generate`**, **`prisma migrate deploy`**, then **`react-router build`** so each deploy applies migrations before the app build (Vercel’s default build is **`npm run build`** via `vercel.json`, matching **`custom-sticker-app(lastupdated)`**).
 
 After the next successful deploy, you should see at least **`Session`** and **`_prisma_migrations`** when querying `information_schema.tables` (or in Prisma Studio).
+
+### Comparing older `custom-sticker-designer` (SQLite) vs `custom-sticker-app(lastupdated)`
+
+The **original** `custom-sticker-designer` folder used **SQLite** (`file:dev.sqlite`); sessions land in **`prisma/dev.sqlite`** on disk when you run dev from that repo. The **current** reference app in this workspace is **`custom-sticker-app(lastupdated)`**, which uses **PostgreSQL** and the same **`npm run build`** / **`DATABASE_URL`** pattern as this banner app.
+
+**This app (`banner-design-preview`)** uses **PostgreSQL** and **`DATABASE_URL`**. Sessions always go to whatever database that URL points to (Neon branch, Vercel Postgres, Docker, etc.). If you still see **no rows in `Session`** after a successful install:
+
+1. **Confirm the URL** — In the same environment where the app handled OAuth (local `.env` vs Vercel **Production** env), `echo`/log the DB host from `DATABASE_URL` (redact password) and query **that** database.
+2. **Confirm migrations** — `Session` must exist (`npx prisma migrate deploy` in build or `shopify app dev` via `shopify.web.toml`).
+3. **Confirm the OAuth callback hit this app** — `SHOPIFY_APP_URL` and Partners **App URL** / **redirect URLs** must match the host that runs this server; otherwise another deployment may be receiving OAuth.
+4. **Row shape** — Offline tokens use ids like `offline_your-store.myshopify.com` (one row per shop for offline session).
 
 ---
 
@@ -43,7 +54,7 @@ After the next successful deploy, you should see at least **`Session`** and **`_
 
 ### 2. Prisma datasource (already in this repo)
 
-`prisma/schema.prisma` uses PostgreSQL with **`DATABASE_URL`** (queries) and **`DIRECT_URL`** (migrations). See [Prisma: connection pool](https://www.prisma.io/docs/guides/performance-and-optimization/connection-management).
+`prisma/schema.prisma` uses PostgreSQL with **`DATABASE_URL`** only. If migrations fail through a pooler (PgBouncer / “prepared statement” errors), use a **non-pooling** URL as `DATABASE_URL` for the build, or add **`directUrl = env("DIRECT_URL")`** to the datasource and set **`DIRECT_URL`** to a direct connection — see [Prisma: external connection poolers](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/databases-connections#external-connection-poolers).
 
 ### 3. Environment variables on Vercel
 
@@ -51,28 +62,29 @@ In the Vercel project → **Settings → Environment Variables**, set at least:
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Pooled Postgres URL (e.g. Vercel **`POSTGRES_PRISMA_URL`** or **`POSTGRES_URL`** — use what Prisma/Vercel docs recommend for your store). |
-| `DIRECT_URL` | **Non-pooling** URL for `prisma migrate deploy` (e.g. **`POSTGRES_URL_NON_POOLING`**). If you only have one URL (local Docker), set both to the same string. |
+| `DATABASE_URL` | Postgres connection string. Vercel Postgres: **`POSTGRES_PRISMA_URL`** (pooled, Prisma-friendly) usually works for **both** runtime and `prisma migrate deploy`. If migrate fails, try **`POSTGRES_URL_NON_POOLING`** for this variable on the build, or introduce `DIRECT_URL` as above. |
 | `SHOPIFY_API_KEY` | From Shopify Partners. |
 | `SHOPIFY_API_SECRET` | From Shopify Partners. |
 | `SHOPIFY_APP_URL` | Your deployed app URL, e.g. `https://your-app.vercel.app` (no trailing slash). |
 | `BANNER_PRICE_PER_3_5_SQFT` | Optional; draft-order pricing per 3.5 sq ft. |
 
-Linking **Vercel Postgres** to the project can auto-inject these; still confirm both **`DATABASE_URL`** and **`DIRECT_URL`** exist (or map them from the injected names above).
+Linking **Vercel Postgres** to the project can auto-inject `POSTGRES_*` variables; map one of them to **`DATABASE_URL`** if it is not set automatically.
 
 ### 4. Build command
 
-**`vercel.json`** already sets:
+**`npm run build`** (used by Vercel’s default build) already runs:
 
 ```bash
-npx prisma generate && npx prisma migrate deploy && npm run build
+prisma generate && prisma migrate deploy && react-router build
 ```
 
-If you override the build command in the Vercel dashboard, keep **`prisma migrate deploy`** in the chain or tables will never be created on deploy.
+(`vercel.json` uses **`npm run build`** only — same as **`custom-sticker-app(lastupdated)`**.) If you override the build command in the Vercel dashboard, keep **`prisma migrate deploy`** in the chain or tables will never be created on deploy.
+
+Local **`shopify app dev`** runs **`predev`** (`prisma generate`) then **`npm exec react-router dev`** — it does **not** run migrations each time. Run **`npm run setup`** (or `npx prisma migrate deploy`) once after clone or when migrations change.
 
 ### 5. Local dev with Postgres
 
-Copy **`.env.example`** to **`.env`** and set **`DATABASE_URL`** and **`DIRECT_URL`** (same value is fine for a local Postgres without a pooler). Use a local Docker Postgres or a Neon **dev** branch so `shopify app dev` and `prisma migrate dev` keep working.
+Copy **`.env.example`** to **`.env`** and set **`DATABASE_URL`**. Use a local Docker Postgres or a Neon **dev** branch so `shopify app dev` and `prisma migrate dev` keep working.
 
 ---
 

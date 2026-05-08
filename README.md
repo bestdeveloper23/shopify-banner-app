@@ -2,9 +2,11 @@
 
 This directory is the Shopify side for the **Design-Preview-Tool** Replit app: theme block **Banner designer**, app proxy prefix `apps` / subpath `banner-preview`. Default **Designer URL** is [https://design-preview-tool.replit.app](https://design-preview-tool.replit.app). On Replit set `ALLOWED_EMBED_ORIGINS` to your store origin(s) and keep `PRIVATE_OBJECT_DIR` for `/api/send-banner-design`. Use `shopify app config link` to attach a new Partner app (replace placeholder `client_id` in `shopify.app.toml`). Products: tag `Banner Designer`; variants use **width × height (inches)** for Option1/Option2; add a **Custom Size** variant (price $0) for sizes that do not match a preset.
 
+**Shopify app plumbing** (Vite, SSR, `root.jsx`, app shell, app proxy error handling, `react-router.config`, `package.json` build) is aligned with **`custom-sticker-app(lastupdated)`** in this monorepo — not the older `custom-sticker-designer` folder. This app has **no billing** and banner-specific theme blocks and proxy pricing.
+
 **Cart (like the sticker app):** In **Online Store → Themes → Customize**, open the **Cart** template (and the **cart drawer** section if your theme has one) and add the **Cart banner images** app block. It loads `/cart.js`, swaps the row image to the line item’s `Preview_Image` when present, and hides internal properties (design URLs, reference codes, etc.) while keeping **Banner_Width_In**, **Banner_Height_In**, and **Grommet_Summary** readable. Optional: in custom cart Liquid, replace the line image with `{% render 'banner-line-item-image', item: line_item, size: 120, class: '…' %}`.
 
-**Database / Vercel:** Prisma targets **PostgreSQL** (`DATABASE_URL` + `DIRECT_URL` in `.env`). `vercel.json` runs **`prisma migrate deploy`** on each deploy so the **`Session`** table exists on Vercel Postgres. The Vercel dashboard does not list tables like a SQL client — use Neon’s SQL editor, Prisma Studio, or `information_schema` — see [docs/VERCEL_DATABASE.md](docs/VERCEL_DATABASE.md).
+**Database / Vercel:** Prisma targets **PostgreSQL** (`DATABASE_URL` in `.env`). **`npm run build`** runs **`prisma generate`**, **`prisma migrate deploy`**, then **`react-router build`** (same pattern as `custom-sticker-app(lastupdated)`). The Vercel dashboard does not list tables like a SQL client — use Neon’s SQL editor, Prisma Studio, or `information_schema` — see [docs/VERCEL_DATABASE.md](docs/VERCEL_DATABASE.md). After clone, run **`npm run setup`** once if the `Session` table is missing locally.
 
 ---
 
